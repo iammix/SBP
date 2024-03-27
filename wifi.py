@@ -46,6 +46,19 @@ class SeismoBugP:
     def __init__(self):
         pass
     
+    def info(self):
+        command = 'info'
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.bind(('192.168.1.100', 10000))
+        client_socket.listen()
+        client_socket, client_address = client_socket.accept()
+        print(f"Connected Device: {client_address}")
+        client_socket.send(command.encode())
+        time.sleep(4)
+        response = client_socket.recv(1024).decode()
+        self.packettype_value = response.split('\n')[4]
+        print(f"Packet Type: {self.packetsize_value}")
+    
     def configure(self):
         pass
 
@@ -157,4 +170,4 @@ class SeismoBugP:
 
 if __name__ == '__main__':
     node_2 = SeismoBugP()
-    node_2.showalias()
+    node_2.info()
