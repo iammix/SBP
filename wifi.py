@@ -44,26 +44,51 @@ def battery_command():
 
 class SeismoBugP:
     def __init__(self):
-        pass
-    
-    def info(self):
-        command = 'info'
+        self._device_name = None
+        self._firmware = None
+        self._color = None
+        self._alias = None
+        self._packettype = None
+        self._packetsize = None
+        self._sps = None
+        self._packetid = None
+        
+        self.info()
+
+
+    def __exec_cmd(self, command):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.bind(('192.168.1.100', 10000))
         client_socket.listen()
         client_socket, client_address = client_socket.accept()
-        print(f"Connected Device: {client_address}")
         client_socket.send(command.encode())
         time.sleep(4)
         response = client_socket.recv(1024).decode()
-        self.packettype_value = response.split('\n')[4]
-        print(f"Packet Type: {self.packetsize_value}")
-    
+        return response
+
+
+    def info(self):
+        command = 'info'
+        response = self.__exec_cmd(command)
+        self._device_name = response.split('\n')[0]
+        self._firmware = response.split('\n')[4].split(' ')[1]
+        self._color = response.split('\n')[5].split(' ')[1]
+        self._alias = response.split('\n')[6].split(' ')[1]
+        self._packettype = response.split('\n')[7].split(' ')[1]
+        self._packetsize = response.split('\n')[8].split(' ')[1]
+        self._sps = response.split('\n')[9].split(' ')[1]
+        self._packetid = response.split('\n')[10].split(' ')[1]
+
+
     def configure(self):
         pass
 
 
+    @property
     def packettype(self):
+        if self._cmd is None:
+            
+            
         command = 'packettype'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.bind(('192.168.1.100', 10000))
@@ -75,7 +100,12 @@ class SeismoBugP:
         response = client_socket.recv(1024).decode()
         self.packettype_value = response.split('\n')[4]
         print(f"Packet Type: {self.packetsize_value}")
-    
+
+    @packettype.setter
+    def packettype(self, command):
+        self._cmd = command
+        
+
     def packetsize(self):
         command = 'packetsize'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,6 +118,7 @@ class SeismoBugP:
         response = client_socket.recv(1024).decode()
         self.packetsize_value = response.split('\n')[4]
         print(f"Packet Size: {self.packetsize_value}")
+
 
     def battery(self):
         command = 'battery'
@@ -129,7 +160,8 @@ class SeismoBugP:
         response = client_socket.recv(1024).decode()
         self.packetid_value = response.split('\n')[4]
         print(f"Packet ID: {self.packetid_value}")
-        
+
+
     def brightness(self):
         command = 'brightness'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -143,6 +175,7 @@ class SeismoBugP:
         self.brightness_value = response.split('\n')[4]
         print(f"Brightness: {self.brightness_value}")
 
+
     def invert(self):
         command = 'invert'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,6 +186,7 @@ class SeismoBugP:
         client_socket.send(command.encode())
         time.sleep(4)
         print(f"Invert DONE")
+
 
     def showalias(self):
         command = 'showalias'
@@ -166,7 +200,6 @@ class SeismoBugP:
         time.sleep(4)
 
 
-        
 
 if __name__ == '__main__':
     node_2 = SeismoBugP()
