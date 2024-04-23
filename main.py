@@ -11,7 +11,7 @@ from SBP_device_handler import SeismoBugP
 
 def main():
     node = SeismoBugP()
-    node.showalias()
+    node.battery()
 
 if __name__ == '__main__':
     main()

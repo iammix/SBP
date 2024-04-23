@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np
 import keyboard
+from datetime import datetime, timedelta
 
 
 def scan_wifi_networks():
@@ -47,7 +48,9 @@ def battery_command():
 
 
 class SeismoBugP:
-    def __init__(self):
+    def __init__(self, ip='192.168.1.100', port=10000):
+        self.ip = ip
+        self.port = port
         self._device_name = None
         self._firmware = None
         self._color = None
@@ -58,6 +61,7 @@ class SeismoBugP:
         self._packetid = None
         self._cmd = None
         self.info()
+        self._ticks_1000MS = 60000
 
     def configure(self):
         pass
@@ -184,7 +188,8 @@ class SeismoBugP:
         response = self.__exec_cmd(command)
         self._battery = response.split('\n')[4]
         print(f'Battery Percentage is: {self._battery}')
-    
+        return self._battery.split('%')[0]
+
     def sats(self):
         command = 'sats'
         response = self.__exec_cmd(command)
@@ -224,12 +229,13 @@ class SeismoBugP:
         command = 'coldrestart'
         self.__exec_cmd(command)
         print('Device COLDRESTARTED . . .')
-    
-    def __wait_for_key_press(self):
-        print('Press any key to exit . . .')
-        keyboard.wait('esc')
-    
-    def start(self, value=10000):
+
+    def _update_plot(self, frame):
+        self.sline.set_data(self.t, self.a*1000)
+        return self.sline,
+
+
+    def start(self, value=120):
         command = 'start'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.bind(('192.168.1.100', 10000))
@@ -239,39 +245,47 @@ class SeismoBugP:
         time.sleep(4)
         running = True
         count = 0
+        all_t = np.empty(0)
+        all_a = np.empty((0,3))
         try:
-            while True:
-                print("Running . . .")
-                self.__wait_for_key_press()
-                break
+            while running:
+                try:
+                    packet = client_socket.recv((10 + 9 * int(self._packetsize) + 12 + 4 + 8))
+                    print(packet)
+                    packetsize = (len(packet)-10-12-4-8)//9
+                    print(packetsize)
+                    start = datetime.fromtimestamp(int.from_bytes(packet[0:4], 'big')) + timedelta(seconds=int.from_bytes(packet[4:6], 'big')/self._ticks_1000MS)
+                    dur = timedelta(seconds=int.from_bytes(packet[6:10], 'big')/self._ticks_1000MS)
+                    step = dur / packetsize
+                    t = np.array([start + i * step for i in range(1, packetsize+1)])
+                    a = np.zeros((packetsize, 3))
+                    for col in range(3):
+                        line = 0
+                        for j in range(10+3*col, len(packet)-4, 9):
+                            val = (packet[j]<<12) | (packet[j+1]<<4) |(packet[j+2]>>4)
+                            if val >= 524288:
+                                val -= 1048576
+                            try:
+                                a[line][col] = val/256000
+                                line +=1
+                            except:
+                                pass
+                    all_t = np.append(all_t, t)
+                    all_a = np.vstack((all_a, 1000*a))
+                    count += 1
+                    time.sleep(1)
+                    if count == value:
+                        running = False
+                except:
+                    pass
         except KeyboardInterrupt:
             print("KeyboardInterrupt: Exiting . . .")
-        #while running:
-        #    response = client_socket.recv(10 + 9 * int(self._packetsize) + 12 + 4 + 8)
-        #    lat = int.from_bytes(response[-24:-20], 'big')
-        #    lng = int.from_bytes(response[-20:-16], 'big')
-        #    alt = int.from_bytes(response[-16:-14], 'big')
-        #    vel = int(response[-14])
-        #    rssi = int(response[-13])
-        #    
-        #    for col in range(3):
-        #        line = 0
-        #        for j in range(10+3*col, len(response)-4, 9):
-        #            val = (response[j] << 12) | (response[j+1] << 4) | (response[j+2] >> 4)
-        #            if val >= 524288:
-        #                val = val - 1048576
-        #            try:
-        #                a[line][col] = val / 256000
-        #                line = line+1 
-        #            except:
-        #                pass
-        #    x=1
-        #    
-        #    if count == value:
-        #        running = False
-        #    count += 1
-        #    print(lat, lng)
-        #    print(rssi)
-        #command = 'stop'
-        #client_socket.send(command.encode())
-        #client_socket.close()
+        client_socket.send('stop'.encode())
+        plt.plot(all_t, all_a)
+        plt.show()
+        client_socket.close()
+
+
+if __name__ == '__main__':
+    node = SeismoBugP()
+    node.start(value=2)
