@@ -271,7 +271,7 @@ class SeismoBugP:
                             except:
                                 pass
                     all_t = np.append(all_t, t)
-                    all_a = np.vstack((all_a, 1000*a))
+                    all_a = np.vstack((all_a, a))
                     count += 1
                     time.sleep(1)
                     if count == value:
@@ -288,4 +288,5 @@ class SeismoBugP:
 
 if __name__ == '__main__':
     node = SeismoBugP()
-    node.start(value=2)
+    #print(node.packetsize)
+    node.start(value=50)
