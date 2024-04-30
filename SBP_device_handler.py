@@ -363,9 +363,9 @@ class SeismoBugP:
                 try:
                     packet = client_socket.recv((10 + 9 * int(self._packetsize) + 12 + 4 + 8))
                     lat, lng, alt, vel, rssi, crc32, crc32_calc, ID, num, t, a, start, packetsize, dur = self._parse_packet(packet)
-                    #packet_info = f"Packet : {ID} {num:03d}, size : {len(packet)}, time : {start.strftime('%d/%m/%Y %H:%M:%S.%f')}, CRC32 read : {crc32:08X}, CRC32 calc : {crc32_calc:08X}"
+                    packet_info = f"Packet : {ID} {num:03d}, size : {len(packet)}, time : {start.strftime('%d/%m/%Y %H:%M:%S.%f')}, CRC32 read : {crc32:08X}, CRC32 calc : {crc32_calc:08X}"
                     #print(packet)
-                    #print(packet_info)
+                    print(packet_info)
                     # append to total matrices
                     all_t = np.append(all_t, t)
                     all_a = np.vstack((all_a, a))
