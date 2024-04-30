@@ -1,4 +1,5 @@
 import time
+import os
 import pywifi
 from pywifi import const
 import socket
@@ -365,6 +366,7 @@ class SeismoBugP:
                     lat, lng, alt, vel, rssi, crc32, crc32_calc, ID, num, t, a, start, packetsize, dur = self._parse_packet(packet)
                     packet_info = f"Packet : {ID} {num:03d}, size : {len(packet)}, time : {start.strftime('%d/%m/%Y %H:%M:%S.%f')}, CRC32 read : {crc32:08X}, CRC32 calc : {crc32_calc:08X}"
                     #print(packet)
+                    stats_sysdatetime = np.append(stats_sysdatetime,datetime.now())
                     print(packet_info)
                     # append to total matrices
                     all_t = np.append(all_t, t)
@@ -374,6 +376,8 @@ class SeismoBugP:
                     stats_packetsize = np.append(stats_packetsize,packetsize)
                     stats_dur = np.append(stats_dur,dur)
                     gap = (all_t[len(all_t)-packetsize] - all_t[len(all_t)-packetsize-1]).total_seconds()
+                    if len(all_t) > packetsize:
+                        stats_gap = np.append(stats_gap, gap)
                     stats_lat = np.append(stats_lat, lat/1e6)
                     stats_lng = np.append(stats_lng, lng/1e6)
                     stats_alt = np.append(stats_alt, alt)
@@ -405,17 +409,82 @@ class SeismoBugP:
         client_socket.close()
         
         if savedata:
+            if not os.path.exists(os.path.join(os.getcwd(), 'Records')):
+                os.mkdir(os.path.join(os.getcwd(), 'Records'))
             all_date = np.array([t.strftime('%d/%m/%Y') for t in all_t])
             all_time = np.array([t.strftime('%H:%M:%S.%f') for t in all_t])
-            df = pd.DataFrame(all_date, columns = ['Date'])
-            df['Time'] = all_time
-            df['Acc x'] = all_a[:,0]
-            df['Acc y'] = all_a[:,1]
-            df['Acc z'] = all_a[:,2]
-            df['Acc x'] = df['Acc x'].apply(lambda x: '{:.6f}'.format(x))
-            df['Acc y'] = df['Acc y'].apply(lambda x: '{:.6f}'.format(x))
-            df['Acc z'] = df['Acc z'].apply(lambda x: '{:.6f}'.format(x))
-            df.to_csv('Record.txt', sep = '\t', index = False)
+            df_accel = pd.DataFrame(all_date, columns = ['Date'])
+            df_accel['Time'] = all_time
+            df_accel['Acc x'] = all_a[:,0]
+            df_accel['Acc y'] = all_a[:,1]
+            df_accel['Acc z'] = all_a[:,2]
+            df_accel['Acc x'] = df_accel['Acc x'].apply(lambda x: '{:.6f}'.format(x))
+            df_accel['Acc y'] = df_accel['Acc y'].apply(lambda x: '{:.6f}'.format(x))
+            df_accel['Acc z'] = df_accel['Acc z'].apply(lambda x: '{:.6f}'.format(x))
+            stats_start_date = np.array([t.strftime('%d/%m/%Y') for t in stats_start])
+            stats_start_time = np.array([t.strftime('%H:%M:%S.%f') for t in stats_start])
+            stats_systime = np.array([t.strftime('%H:%M:%S.%f') for t in stats_sysdatetime])
+            stats_dur_secs = np.array([t.total_seconds() for t in stats_dur])
+
+            # number
+            df = pd.DataFrame(stats_num, columns = ['#'])
+            # ID
+            df['ID'] = stats_ID
+            # Packet size
+            df['Size'] = stats_packetsize
+            # Packet length
+            df['Bytes'] = stats_packetbytes
+            # Packet date
+            df['Date'] = stats_start_date
+            # Packet time
+            df['Time'] = stats_start_time
+            # Packet duration (as received)
+            df['Dur read'] = 1000*stats_dur_secs
+            # Packet calculated duration (current packet time - previous packet time)
+            df['Dur calc'] = np.concatenate(( 1000*np.array([td.total_seconds() for td in np.diff(stats_start)]) , np.array([0]) ))
+            # Calculated samples per second from packet duration and packet size
+            df['SPS'] = stats_packetsize/stats_dur_secs
+            # Calculated sample duration from packet duration and packet size
+            df['dt'] = 1000*stats_dur_secs/stats_packetsize
+            # Time gap between current and previous packet
+            df['Gap'] = 1000*stats_gap
+            # System time when packet is received
+            df['PC time'] = stats_systime
+            # Time difference between system time and packet time
+            df['Diff'] = 1000*np.array([t.total_seconds() for t in stats_sysdatetime - stats_start])
+            # lat
+            df['Lat'] = stats_lat;
+            # lng
+            df['Lng'] = stats_lng;
+            # altitude
+            df['Alt'] = stats_alt;
+            # velocitu
+            df['Vel'] = stats_vel;
+            # rssi
+            df['RSSI'] = stats_rssi;
+            # Packet CRC32
+            df['CRC32 recv'] = stats_crc32
+            # Packet CRC32 calculated
+            df['CRC32 calc'] = stats_crc32_calc
+            # check
+            df['Check'] = np.where(df['CRC32 recv'] == df['CRC32 calc'], 'Ok', 'Corrupt')
+            # Data formatting
+            df['Dur read'] = df['Dur read'].apply(lambda x: '{:.2f}'.format(x))
+            df['Dur calc'] = df['Dur calc'].apply(lambda x: '{:.2f}'.format(x))
+            df['SPS'] = df['SPS'].apply(lambda x: '{:.2f}'.format(x))
+            df['dt'] = df['dt'].apply(lambda x: '{:.2f}'.format(x))
+            df['Gap'] = df['Gap'].apply(lambda x: '{:.2f}'.format(x))
+            df['Diff'] = df['Diff'].apply(lambda x: '{:.2f}'.format(x))
+            df['Lat'] = df['Lat'].apply(lambda x: '{:.6f}'.format(x))
+            df['Lng'] = df['Lng'].apply(lambda x: '{:.6f}'.format(x))
+            df['CRC32 recv'] = df['CRC32 recv'].apply(lambda x: '{:08X}'.format(x))
+            df['CRC32 calc'] = df['CRC32 calc'].apply(lambda x: '{:08X}'.format(x))
+
+
+            current_datetime = datetime.now()
+            formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
+            df_accel.to_csv(f'./Records/accel_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
+            df.to_csv(f'./Records/stats_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
 
 
 
