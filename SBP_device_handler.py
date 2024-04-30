@@ -8,7 +8,8 @@ from matplotlib.animation import FuncAnimation
 import numpy as np
 import keyboard
 from datetime import datetime, timedelta
-
+import zlib
+import pandas as pd
 
 def scan_wifi_networks():
     wifi = pywifi.PyWiFi()
@@ -48,7 +49,8 @@ def battery_command():
 
 
 class SeismoBugP:
-    def __init__(self, ip='192.168.1.100', port=10000):
+    def __init__(self, sbp_name=None, ip='192.168.1.100', port=10000):
+        self.sbp_name = sbp_name
         self.ip = ip
         self.port = port
         self._device_name = None
@@ -60,11 +62,73 @@ class SeismoBugP:
         self._sps = None
         self._packetid = None
         self._cmd = None
-        self.info()
         self._ticks_1000MS = 60000
+        if sbp_name is None:
+            self.info()
 
-    def configure(self):
-        pass
+    def __sbp_network(self):
+        wifi = pywifi.PyWiFi()
+        iface = wifi.interfaces()[0]
+        iface.scan()
+        time.sleep(5)
+        network_list = iface.scan_results()
+        self.net_list = []
+        for network in network_list:
+            if "SBP_" in network.ssid:
+                self.net_list.append(network.ssid)
+        target_network = self.sbp_name
+        if target_network == None:
+            raise ValueError("sbp_name is not defined in the class constructor")
+
+        profile = pywifi.Profile()
+        profile.ssid = target_network
+        profile.auth = const.AUTH_ALG_OPEN
+        tmp_profile = iface.add_network_profile(profile)
+        iface.connect(tmp_profile)
+        time.sleep(5)
+        if iface.status() == const.IFACE_CONNECTED:
+            print(f"Connected to {target_network}")
+        else:
+            print("Connection Failed")
+
+
+    def configure(self, ssid=None, password=None, server=None, port=None, alias=None, color=None):
+        server_ip = '192.168.1.1'
+        server_port = 6666
+        self.__sbp_network()
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            client_socket.connect((server_ip, server_port))
+            if ssid is not None:
+                command = f"ssid {ssid}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            if password is not None:
+                command = f"pass {password}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            if server is not None:
+                command = f"server {server}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            if port is not None:
+                command = f"port {port}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            if alias is not None:
+                command = f"alias {alias}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            if color is not None:
+                command = f"color {color}"
+                client_socket.sendall(command.encode())
+                time.sleep(3)
+            time.sleep(1)
+        finally:
+            command = 'restart'
+            client_socket.sendall(command.encode())
+            time.sleep(1)
+            client_socket.close()
 
     def __exec_cmd(self, command):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -81,13 +145,13 @@ class SeismoBugP:
         command = 'info'
         response = self.__exec_cmd(command)
         self._device_name = response.split('\n')[0]
-        self._firmware = response.split('\n')[4].split(' ')[1]
-        self._color = response.split('\n')[5].split(' ')[1]
-        self._alias = response.split('\n')[6].split(' ')[1]
-        self._packettype = response.split('\n')[7].split(' ')[1]
-        self._packetsize = response.split('\n')[8].split(' ')[1]
-        self._sps = response.split('\n')[9].split(' ')[1]
-        self._packetid = response.split('\n')[10].split(' ')[1]
+        self._firmware = response.split('\n')[3].split(' ')[1]
+        self._color = response.split('\n')[4].split(' ')[1]
+        self._alias = response.split('\n')[5].split(' ')[1]
+        self._packettype = response.split('\n')[6].split(' ')[1]
+        self._packetsize = response.split('\n')[7].split(' ')[1]
+        self._sps = response.split('\n')[8].split(' ')[1]
+        self._packetid = response.split('\n')[9].split(' ')[1]
 
 
 
@@ -234,8 +298,37 @@ class SeismoBugP:
         self.sline.set_data(self.t, self.a*1000)
         return self.sline,
 
+    def _parse_packet(self, packet):
+        packetsize = (len(packet)-10-12-4-8)//9
+        lat = int.from_bytes(packet[-24:-20], 'big')
+        lng = int.from_bytes(packet[-20:-16], 'big')
+        alt = int.from_bytes(packet[-16:-14], 'big')
+        vel = int(packet[-14])
+        rssi = int(packet[-13])
+        crc32 = int.from_bytes(packet[-12:-8], 'big')
+        crc32_calc = zlib.crc32(packet[:-12]) & 0xffffffff
+        ID = packet[-8:-2].decode('utf-8')
+        num = int.from_bytes(packet[-2:], 'big')
+        start = datetime.fromtimestamp(int.from_bytes(packet[0:4], 'big')) + timedelta(seconds=int.from_bytes(packet[4:6], 'big')/self._ticks_1000MS)
+        dur = timedelta(seconds=int.from_bytes(packet[6:10], 'big')/self._ticks_1000MS)
+        step = dur / packetsize
+        t = np.array([start + i * step for i in range(1, packetsize+1)])
+        a = np.zeros((packetsize, 3))
+        for col in range(3):
+            line = 0
+            for j in range(10+3*col, len(packet)-4, 9):
+                val = (packet[j]<<12) | (packet[j+1]<<4) |(packet[j+2]>>4)
+                if val >= 524288:
+                    val -= 1048576
+                try:
+                    a[line][col] = val/256000
+                    line +=1
+                except:
+                    pass
+        return lat, lng, alt, vel, rssi, crc32, crc32_calc, ID, num, t, a, start, packetsize, dur
 
-    def start(self, value=120):
+
+    def start(self, savedata=False, terminate_value=10):
         command = 'start'
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.bind(('192.168.1.100', 10000))
@@ -245,48 +338,87 @@ class SeismoBugP:
         time.sleep(4)
         running = True
         count = 0
+
+        
         all_t = np.empty(0)
         all_a = np.empty((0,3))
+        stats_packetbytes = np.empty(0).astype(int)
+        stats_packetsize = np.empty(0).astype(int)
+        stats_start = np.empty(0)
+        stats_dur = np.empty(0)
+        stats_gap = np.append(np.empty(0), 0)
+        stats_sysdatetime = np.empty(0)
+        stats_crc32 = np.empty(0).astype(int)
+        stats_crc32_calc = np.empty(0).astype(int)
+        stats_lat = np.empty(0).astype(float)
+        stats_lng = np.empty(0).astype(float)
+        stats_alt = np.empty(0).astype(int)
+        stats_vel = np.empty(0).astype(int)
+        stats_rssi = np.empty(0).astype(int)
+        stats_ID = np.empty(0).astype(str)
+        stats_num = np.empty(0).astype(int)
+        print('Start streaming . . .')
         try:
             while running:
                 try:
                     packet = client_socket.recv((10 + 9 * int(self._packetsize) + 12 + 4 + 8))
-                    print(packet)
-                    packetsize = (len(packet)-10-12-4-8)//9
-                    print(packetsize)
-                    start = datetime.fromtimestamp(int.from_bytes(packet[0:4], 'big')) + timedelta(seconds=int.from_bytes(packet[4:6], 'big')/self._ticks_1000MS)
-                    dur = timedelta(seconds=int.from_bytes(packet[6:10], 'big')/self._ticks_1000MS)
-                    step = dur / packetsize
-                    t = np.array([start + i * step for i in range(1, packetsize+1)])
-                    a = np.zeros((packetsize, 3))
-                    for col in range(3):
-                        line = 0
-                        for j in range(10+3*col, len(packet)-4, 9):
-                            val = (packet[j]<<12) | (packet[j+1]<<4) |(packet[j+2]>>4)
-                            if val >= 524288:
-                                val -= 1048576
-                            try:
-                                a[line][col] = val/256000
-                                line +=1
-                            except:
-                                pass
+                    lat, lng, alt, vel, rssi, crc32, crc32_calc, ID, num, t, a, start, packetsize, dur = self._parse_packet(packet)
+                    #packet_info = f"Packet : {ID} {num:03d}, size : {len(packet)}, time : {start.strftime('%d/%m/%Y %H:%M:%S.%f')}, CRC32 read : {crc32:08X}, CRC32 calc : {crc32_calc:08X}"
+                    #print(packet)
+                    #print(packet_info)
+                    # append to total matrices
                     all_t = np.append(all_t, t)
                     all_a = np.vstack((all_a, a))
+                    stats_start = np.append(stats_start,start)
+                    stats_packetbytes = np.append(stats_packetbytes,(len(packet)))
+                    stats_packetsize = np.append(stats_packetsize,packetsize)
+                    stats_dur = np.append(stats_dur,dur)
+                    gap = (all_t[len(all_t)-packetsize] - all_t[len(all_t)-packetsize-1]).total_seconds()
+                    stats_lat = np.append(stats_lat, lat/1e6)
+                    stats_lng = np.append(stats_lng, lng/1e6)
+                    stats_alt = np.append(stats_alt, alt)
+                    stats_vel = np.append(stats_vel, vel)
+                    stats_rssi = np.append(stats_rssi, -rssi)
+                    stats_crc32 = np.append(stats_crc32, crc32)
+                    stats_crc32_calc = np.append(stats_crc32_calc, crc32_calc)
+                    stats_ID = np.append(stats_ID, ID)
+                    stats_num = np.append(stats_num, num)
                     count += 1
                     time.sleep(1)
-                    if count == value:
+                    print(count, terminate_value)
+                    if count == terminate_value:
                         running = False
                 except:
                     pass
         except KeyboardInterrupt:
             print("KeyboardInterrupt: Exiting . . .")
+
         client_socket.send('stop'.encode())
-        plt.plot(all_t, all_a)
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(8,12))
+        ax1.plot(all_t, all_a[:, 0])
+        ax2.plot(all_t, all_a[:, 1])
+        ax3.plot(all_t, all_a[:, 2])
+        ax1.set_title('x-axis')
+        ax2.set_title('y-axis')
+        ax3.set_title('z-axis')
         plt.show()
         client_socket.close()
+        
+        if savedata:
+            all_date = np.array([t.strftime('%d/%m/%Y') for t in all_t])
+            all_time = np.array([t.strftime('%H:%M:%S.%f') for t in all_t])
+            df = pd.DataFrame(all_date, columns = ['Date'])
+            df['Time'] = all_time
+            df['Acc x'] = all_a[:,0]
+            df['Acc y'] = all_a[:,1]
+            df['Acc z'] = all_a[:,2]
+            df['Acc x'] = df['Acc x'].apply(lambda x: '{:.6f}'.format(x))
+            df['Acc y'] = df['Acc y'].apply(lambda x: '{:.6f}'.format(x))
+            df['Acc z'] = df['Acc z'].apply(lambda x: '{:.6f}'.format(x))
+            df.to_csv('Record.txt', sep = '\t', index = False)
+
 
 
 if __name__ == '__main__':
     node = SeismoBugP()
-    #print(node.packetsize)
-    node.start(value=50)
+    node.start(savedata=True, terminate_value=10)
