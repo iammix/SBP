@@ -1,0 +1,1 @@
+python upload.py --chip esp8266 --port "COM4" --baud "921600" ""  --before default_reset --after hard_reset write_flash 0x0 SeismoBug_P_v1.0.ino.bin

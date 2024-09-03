@@ -322,7 +322,7 @@ class SeismoBugP:
                 if val >= 524288:
                     val -= 1048576
                 try:
-                    a[line][col] = val/256000
+                    a[line][col] = val / 256000
                     line +=1
                 except:
                     pass
@@ -441,7 +441,7 @@ class SeismoBugP:
             # Packet duration (as received)
             df['Dur read'] = 1000*stats_dur_secs
             # Packet calculated duration (current packet time - previous packet time)
-            df['Dur calc'] = np.concatenate(( 1000*np.array([td.total_seconds() for td in np.diff(stats_start)]) , np.array([0]) ))
+            df['Dur calc'] = np.concatenate((1000*np.array([td.total_seconds() for td in np.diff(stats_start)]), np.array([0])))
             # Calculated samples per second from packet duration and packet size
             df['SPS'] = stats_packetsize/stats_dur_secs
             # Calculated sample duration from packet duration and packet size
@@ -453,15 +453,15 @@ class SeismoBugP:
             # Time difference between system time and packet time
             df['Diff'] = 1000*np.array([t.total_seconds() for t in stats_sysdatetime - stats_start])
             # lat
-            df['Lat'] = stats_lat;
+            df['Lat'] = stats_lat
             # lng
-            df['Lng'] = stats_lng;
+            df['Lng'] = stats_lng
             # altitude
-            df['Alt'] = stats_alt;
+            df['Alt'] = stats_alt
             # velocitu
-            df['Vel'] = stats_vel;
+            df['Vel'] = stats_vel
             # rssi
-            df['RSSI'] = stats_rssi;
+            df['RSSI'] = stats_rssi
             # Packet CRC32
             df['CRC32 recv'] = stats_crc32
             # Packet CRC32 calculated
@@ -486,7 +486,8 @@ class SeismoBugP:
             df_accel.to_csv(f'./Records/accel_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
             df.to_csv(f'./Records/stats_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
 
-
+    def _get_stats():
+    pass
 
 if __name__ == '__main__':
     node = SeismoBugP()
