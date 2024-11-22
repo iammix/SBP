@@ -10,6 +10,7 @@ data_directory = 'Data/T7/sbp'
 save_directory = 'Data/T7/plots'
 os.makedirs(save_directory, exist_ok=True)
 
+
 def process():
     # Dictionary to store data for each device
     device_data = {}
@@ -18,27 +19,25 @@ def process():
     for device_folder in os.listdir(data_directory):
         device_folder_path = os.path.join(data_directory, device_folder)
         device_df = pd.DataFrame()
-        
+
         if os.path.isdir(device_folder_path):
             for file_name in os.listdir(device_folder_path):
 
                 if file_name.endswith('.txt'):
                     file_path = os.path.join(device_folder_path, file_name)
-                    
+
                     # Read the file and parse only the necessary columns
                     df = pd.read_csv(file_path, delimiter='\t',
                                      usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
                     df.columns = ['time', 'acc_x', 'acc_y', 'acc_z']  # Rename columns for ease of use
-                    
+
                     # Convert time column to datetime format for easier filtering
                     df['time'] = pd.to_datetime(df['time'])
 
-                    
                     # Convert acceleration from milli-g to g and apply baseline correction
                     df['acc_x'] = df['acc_x'] - df['acc_x'].mean()
                     df['acc_y'] = df['acc_y'] - df['acc_y'].mean()
                     df['acc_z'] = df['acc_z'] - df['acc_z'].mean()
-
 
                     device_df = pd.concat(device_df, df)
                     # Store the DataFrame in the dictionary with device name as key
@@ -52,18 +51,18 @@ def process():
         global_max_value = float('-inf')
         global_max_time = None
         global_max_device = None
-        
+
         for device, df in device_data.items():
             # Get the maximum value and time for the current device and axis
             device_max_value = df[axis].max()
             device_max_time = df.loc[df[axis].idxmax(), 'time']
-            
+
             # Update the global maximum if the device has a higher max
             if device_max_value > global_max_value:
                 global_max_value = device_max_value
                 global_max_time = device_max_time
                 global_max_device = device
-        
+
         # Store the global max info
         global_max_info[axis] = {
             'value': global_max_value,
@@ -74,18 +73,18 @@ def process():
     # Plot the data for each axis, using the global max time as reference and compute PSD
     for axis, max_info in global_max_info.items():
         max_time = max_info['time']
-        
+
         # Plot time-domain data in the 2-minute window
         plt.figure(figsize=(12, 8))
         plt.title(f'2-minute window around global max {axis} acceleration {max_info["value"]:.4f}(g)')
         plt.xlabel('Time (hh:mm:ss)')
         plt.ylabel(f'{axis} acceleration (g)')
-        
+
         for device, df in device_data.items():
             # Filter data to 1 minute before and after the global max time
             window_df = df[(df['time'] >= max_time - pd.Timedelta(minutes=1)) &
                            (df['time'] <= max_time + pd.Timedelta(minutes=1))]
-            
+
             # Plot the time-domain data within this window
             plt.plot(window_df['time'], window_df[axis], linewidth=0.5, label=device)
 
@@ -99,11 +98,11 @@ def process():
         plt.title(f'PSD of 2-minute window around global max {axis} for all devices')
         plt.xlabel('Frequency (Hz)')
         plt.ylabel('PSD (g^2/Hz)')
-        
+
         for device, df in device_data.items():
             # Extract signal for the 2-minute window
             signal = window_df[axis].values
-            
+
             # Compute PSD using the periodogram method
             freqs, psd = periodogram(signal, fs=125)  # Adjust `fs` if necessary
             # Find the frequency with the highest amplitude
@@ -113,13 +112,14 @@ def process():
             plt.plot(freqs, psd, linewidth=0.5, label=f'{device}')
             # Add a vertical line for the max frequency and annotate
             plt.axvline(x=max_psd_freq, color='r', linestyle='--', linewidth=0.8)
-            plt.text(max_psd_freq, max_psd_value, f'{max_psd_freq:.2f} Hz', color='red', 
+            plt.text(max_psd_freq, max_psd_value, f'{max_psd_freq:.2f} Hz', color='red',
                      ha='center', va='bottom')
-        
+
         save_path_psd = os.path.join(save_directory, f'psd_global_max_{axis}.png')
         plt.legend()
         plt.savefig(save_path_psd)
         plt.show()
+
 
 def find_and_plot_silent_interval(df, axis='acc_x', peak_threshold=0.2, window_minutes=2):
     """
@@ -134,15 +134,14 @@ def find_and_plot_silent_interval(df, axis='acc_x', peak_threshold=0.2, window_m
 
     # Calculate window size in terms of number of samples (assuming data is recorded in regular intervals)
     window_size = pd.Timedelta(minutes=window_minutes)
-    
+
     # Slide over the data with the defined window size
     for start_time in df['time']:
         # Define the end time of the window
         end_time = start_time + window_size
-        
+
         # Filter the data within this time window
         window_df = df[(df['time'] >= start_time) & (df['time'] < end_time)]
-
 
         if window_df[axis].abs().max() < peak_threshold:
             # If no significant peaks are found, plot this interval and return
@@ -157,6 +156,7 @@ def find_and_plot_silent_interval(df, axis='acc_x', peak_threshold=0.2, window_m
 
     print("No silent interval found within the specified criteria.")
 
+
 def find_silent_intervals(device_data, axis='acc_x', peak_threshold=0.2, window_minutes=1):
     """
     Finds a 2-minute silent interval (without significant peaks) for each device and plots all in one figure.
@@ -169,7 +169,7 @@ def find_silent_intervals(device_data, axis='acc_x', peak_threshold=0.2, window_
     """
     window_size = pd.Timedelta(minutes=window_minutes)
     silent_intervals = {}  # To store silent intervals for each device
-    
+
     # Loop through each device to find a silent interval
     for device, df in device_data.items():
         # Slide over the data with the defined window size
@@ -194,6 +194,7 @@ def find_silent_intervals(device_data, axis='acc_x', peak_threshold=0.2, window_
     plt.legend()
     plt.show()
 
+
 def find_common_silent_interval(device_data, axis, peak_threshold=0.2, window_minutes=1):
     """
     Finds a common 2-minute silent interval without significant peaks across all devices and plots it.
@@ -205,11 +206,11 @@ def find_common_silent_interval(device_data, axis, peak_threshold=0.2, window_mi
     - window_minutes: Duration of the window to find (in minutes).
     """
     window_size = pd.Timedelta(minutes=window_minutes)
-    
+
     # Find the earliest and latest time range across all devices
     start_time = max(df['time'].min() for df in device_data.values())
     end_time = min(df['time'].max() for df in device_data.values())
-    
+
     # Slide the 2-minute window across the common time range
     current_time = start_time
     while current_time + window_size <= end_time:
@@ -228,23 +229,24 @@ def find_common_silent_interval(device_data, axis, peak_threshold=0.2, window_mi
             plt.title(f'Common 1-minute Silent Interval in {axis} for SBP Devices')
             plt.xlabel('Time (hh:mm:sec)')
             plt.ylabel(f'{axis} acceleration (g)')
-            
+
             # Plot each device's data within the common silent interval
             for device, df in device_data.items():
                 window_df = df[(df['time'] >= current_time) & (df['time'] < current_time + window_size)]
                 plt.plot(window_df['time'], window_df[axis], linewidth=0.5, label=device)
-            
+
             plt.legend()
             # Save the plot to a file
             save_path = os.path.join(save_directory, f'common_silent_interval_{axis}.png')
             plt.savefig(save_path)
             plt.show()
             return  # Stop after finding and plotting the first common silent interval
-        
+
         # Move the window by a small increment (e.g., 1 second)
         current_time += pd.Timedelta(seconds=1)
 
     print("No common silent interval found within the specified criteria.")
+
 
 def analyze_silent_interval(device_data, axis='acc_x', peak_threshold=0.2, window_minutes=2, save_directory='plots'):
     """
@@ -264,7 +266,7 @@ def analyze_silent_interval(device_data, axis='acc_x', peak_threshold=0.2, windo
     # Find the common time range
     start_time = max(df['time'].min() for df in device_data.values())
     end_time = min(df['time'].max() for df in device_data.values())
-    
+
     current_time = start_time
     while current_time + window_size <= end_time:
         common_silent = True
@@ -297,7 +299,7 @@ def analyze_silent_interval(device_data, axis='acc_x', peak_threshold=0.2, windo
 
                 # Calculate peak-to-peak (P2P) and RMS
                 p2p_data[device] = np.ptp(signal)
-                rms_data[device] = np.sqrt(np.mean(signal**2))
+                rms_data[device] = np.sqrt(np.mean(signal ** 2))
 
                 # Plot PSD
                 plt.plot(freqs, psd, linewidth=0.5, label=f'{device}')
@@ -310,14 +312,15 @@ def analyze_silent_interval(device_data, axis='acc_x', peak_threshold=0.2, windo
             print(f"Peak-to-Peak and RMS for silent interval in {axis}:")
             for device in device_data.keys():
                 print(f"Device: {device}")
-                print(f"  Peak-to-Peak (P2P): {p2p_data[device]*1000:.6f} mg")
-                print(f"  RMS: {rms_data[device]*1000:.6f} mg")
+                print(f"  Peak-to-Peak (P2P): {p2p_data[device] * 1000:.6f} mg")
+                print(f"  RMS: {rms_data[device] * 1000:.6f} mg")
 
             return
 
         current_time += pd.Timedelta(seconds=1)
 
     print("No common silent interval found within the specified criteria.")
+
 
 def plot_full_acceleration(device_data, save_directory='plots'):
     """
@@ -334,7 +337,7 @@ def plot_full_acceleration(device_data, save_directory='plots'):
         plt.title(f'Full Acceleration Time Series for {axis} Across All Devices')
         plt.xlabel('Time')
         plt.ylabel(f'{axis} acceleration (g)')
-        
+
         # Plot the full time series for each device for the current axis
         for device, df in device_data.items():
             plt.plot(df['time'], df[axis], label=device, linewidth=0.5)
@@ -346,7 +349,8 @@ def plot_full_acceleration(device_data, save_directory='plots'):
         plt.show()
         print(f"Plot saved to {save_path}")
 
-def plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125*3, nLTA=125*30, save_directory='plots'):
+
+def plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots'):
     """
     Calculates and plots the ratio sSTA/sLTA for all devices together in a given direction.
 
@@ -362,7 +366,7 @@ def plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125*3, nLTA
     plt.figure(figsize=(14, 8))
 
     for device, df in device_data.items():
-        signal_squared = df[axis]**2  # Squared acceleration signal
+        signal_squared = df[axis] ** 2  # Squared acceleration signal
 
         # Initialize sSTA and sLTA
         sSTA = [signal_squared.iloc[0]]  # Start with the first value
@@ -404,6 +408,7 @@ def plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125*3, nLTA
     plt.show()
     print(f"Plot saved to {save_path}")
 
+
 def get_data():
     device_data = {}
 
@@ -417,9 +422,9 @@ def get_data():
                 if file_name.endswith('.txt'):
                     file_path = os.path.join(device_folder_path, file_name)
                     # Read the file and parse only the necessary columns
-                    #df = pd.read_fwf(file_path, usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
+                    # df = pd.read_fwf(file_path, usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
                     df = pd.read_csv(file_path, delimiter='\t',
-                                usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
+                                     usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
                     df.columns = ['time', 'acc_x', 'acc_y', 'acc_z']  # Rename columns for ease of use
 
                     # Convert time column to datetime format for easier filtering
@@ -428,15 +433,11 @@ def get_data():
                     df['acc_x'] = df['acc_x'] / 1000
                     df['acc_y'] = df['acc_y'] / 1000
                     df['acc_z'] = df['acc_z'] / 1000
-                    # Apply baseline correction by subtracting the mean of each axis
-                    df['acc_x'] = df['acc_x'] - df['acc_x'].mean()
-                    df['acc_y'] = df['acc_y'] - df['acc_y'].mean()
-                    df['acc_z'] = df['acc_z'] - df['acc_z'].mean()
 
                     # Store the DataFrame in the dictionary with device name as key
                     device_df = pd.concat([device_df, df], axis=0, ignore_index=True)
                     device_data[device_folder] = device_df
-    
+
     return device_data
 
 
@@ -461,18 +462,74 @@ def butterworth_filter(data, lowcut, highcut, fs, order=4):
     return filtfilt(b, a, data)
 
 
+def baseline_correction(df, linear=False):
+    if linear:
+        for axis in ['acc_x', 'acc_y', 'acc_z']:
+            time_numeric = (df['time'] - df['time'].iloc[0]).dt.total_seconds()
+            trend = np.polyfit(time_numeric, df[axis], 1)  # Fit a linear model
+            linear_baseline = np.polyval(trend, time_numeric)  # Evaluate the trend
+            df[axis] = df[axis] - linear_baseline  # Subtract the linear baseline
+    else:
+        # Apply baseline correction by subtracting the mean of each axis
+        df['acc_x'] = df['acc_x'] - df['acc_x'].mean()
+        df['acc_y'] = df['acc_y'] - df['acc_y'].mean()
+        df['acc_z'] = df['acc_z'] - df['acc_z'].mean()
+
+    return df
+
+
+def get_data_with_gaps(threshold_minutes=1):
+    device_data = {}
+    gap_info = {}
+
+    # Read data for each device
+    for device_folder in os.listdir(data_directory):
+        device_folder_path = os.path.join(data_directory, device_folder)
+        device_df = pd.DataFrame()
+
+        if os.path.isdir(device_folder_path):
+            for file_name in os.listdir(device_folder_path):
+                if file_name.endswith('.txt'):
+                    file_path = os.path.join(device_folder_path, file_name)
+                    # Read the file and parse only the necessary columns
+                    df = pd.read_csv(file_path, delimiter='\t',
+                                     usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
+                    df.columns = ['time', 'acc_x', 'acc_y', 'acc_z']  # Rename columns for ease of use
+
+                    # Convert time column to datetime format for easier filtering
+                    df['time'] = pd.to_datetime(df['time'])
+                    # Convert acceleration from milli-g to g
+                    df['acc_x'] = df['acc_x'] / 1000
+                    df['acc_y'] = df['acc_y'] / 1000
+                    df['acc_z'] = df['acc_z'] / 1000
+                    # Apply baseline correction by subtracting the mean of each axis
+                    df = baseline_correction(df, linear=True)
+
+                    # Store the DataFrame in the dictionary with device name as key
+                    device_df = pd.concat([device_df, df], axis=0, ignore_index=True)
+
+            # Calculate time gaps
+            if not device_df.empty:
+                device_df['time_diff'] = device_df['time'].diff().dt.total_seconds() / 60  # Time difference in minutes
+                gaps = device_df[device_df['time_diff'] > threshold_minutes]
+                if not gaps.empty:
+                    gap_info[device_folder] = gaps[['time', 'time_diff']]
+
+            device_data[device_folder] = device_df
+
+    return device_data, gap_info
+
+
 if __name__ == '__main__':
-    device_data = get_data()
+    device_data, gap_info = get_data_with_gaps()
 
-
-
-    #plot_full_acceleration(device_data)
+    # plot_full_acceleration(device_data)
     # find_common_silent_interval(device_data, axis='acc_x', peak_threshold=0.001, window_minutes=1)
     # find_common_silent_interval(device_data, axis='acc_y', peak_threshold=0.001, window_minutes=1)
     # find_common_silent_interval(device_data, axis='acc_z', peak_threshold=0.001, window_minutes=1)
     # analyze_silent_interval(device_data, axis='acc_x',peak_threshold=0.001, window_minutes=1, save_directory='plots')
     # analyze_silent_interval(device_data, axis='acc_y',peak_threshold=0.001, window_minutes=1, save_directory='plots')
     # analyze_silent_interval(device_data, axis='acc_z',peak_threshold=0.001, window_minutes=1, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125*3, nLTA=125*30, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_y', nSTA=125*3, nLTA=125*30, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_z', nSTA=125*3, nLTA=125*30, save_directory='plots')
+    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_y', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_z', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
