@@ -4,6 +4,83 @@ import matplotlib.pyplot as plt
 from scipy.signal import welch
 import numpy as np
 from scipy.signal import periodogram, butter, filtfilt
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import svd, eig
+
+class DynamicModeDecomposition:
+    def __init__(self, data_matrix, dt):
+        """
+        Initialize the DMD class.
+        
+        :param data_matrix: A 2D numpy array where each row represents acceleration data from one accelerometer.
+        :param dt: Time step between recordings.
+        """
+        self.data_matrix = data_matrix
+        self.dt = dt
+        self.eigenvalues = None
+        self.modes = None
+        self.frequencies = None
+
+    def fit(self):
+        """
+        Perform Dynamic Mode Decomposition.
+        """
+        X = self.data_matrix[:, :-1]
+        X_prime = self.data_matrix[:, 1:]
+
+        # Step 1: SVD of X
+        U, S, Vh = svd(X, full_matrices=False)
+
+        # Step 2: Reduced representation
+        r = len(S)  # Can truncate to fewer modes by selecting r < len(S)
+        U_r = U[:, :r]
+        S_r = np.diag(S[:r])
+        V_r = Vh[:r, :]
+
+        # Step 3: Build the reduced A_tilde matrix
+        A_tilde = U_r.T @ X_prime @ V_r.T @ np.linalg.inv(S_r)
+
+        # Step 4: Compute eigenvalues and eigenvectors of A_tilde
+        eigvals, eigvecs = eig(A_tilde)
+
+        # Step 5: Map back to the high-dimensional space
+        self.eigenvalues = eigvals
+        self.modes = U_r @ eigvecs
+
+        # Step 6: Compute frequencies from eigenvalues
+        self.frequencies = np.angle(self.eigenvalues) / (2 * np.pi * self.dt)
+
+    def plot_modes(self):
+        """
+        Plot the real and imaginary parts of the DMD modes.
+        """
+        if self.modes is None:
+            raise ValueError("DMD has not been fitted yet. Run `fit` first.")
+
+        for i, mode in enumerate(self.modes.T):
+            plt.figure()
+            plt.title(f"DMD Mode {i+1}")
+            plt.plot(np.real(mode), label='Real Part')
+            plt.plot(np.imag(mode), label='Imaginary Part')
+            plt.legend()
+            plt.show()
+
+    def plot_frequencies(self):
+        """
+        Plot the frequencies of the DMD modes.
+        """
+        if self.frequencies is None:
+            raise ValueError("Frequencies have not been computed. Run `fit` first.")
+        
+        plt.figure()
+        plt.title("DMD Frequencies")
+        plt.stem(self.frequencies, use_line_collection=True)
+        plt.xlabel("Mode index")
+        plt.ylabel("Frequency (Hz)")
+        plt.grid(True)
+        plt.show()
+
 
 # Define the main data directory
 data_directory = 'Data/T7/sbp'
@@ -520,8 +597,62 @@ def get_data_with_gaps(threshold_minutes=1):
     return device_data, gap_info
 
 
+import numpy as np
+import pandas as pd
+from scipy.signal import periodogram
+import matplotlib.pyplot as plt
+
+# Assuming DynamicModeDecomposition class from previous response is imported
+# This class should be updated to fit data and compute frequencies.
+
+def extract_and_compare_frequencies(device_data, dt=1/125, save_directory='plots'):
+    """
+    Extracts frequencies using DMD from acceleration data and compares them with FEM model frequencies.
+
+    Parameters:
+    - device_data: Dictionary containing acceleration data for each device.
+    - dt: Time step between recordings (assumed 1/125 for 125 Hz sampling rate).
+    - save_directory: Directory to save plots.
+    """
+    os.makedirs(save_directory, exist_ok=True)
+
+    for axis in ['acc_x', 'acc_y', 'acc_z']:
+        # Initialize a list to store DMD frequencies for each device
+        dmd_frequencies_per_device = {}
+
+        for device, df in device_data.items():
+            # Extract the acceleration data for the given axis and convert to a 2D NumPy array (each row represents data from one device)
+            data_matrix = df[axis].values.reshape(1, -1)
+
+            # Perform DMD on the acceleration data
+            dmd = DynamicModeDecomposition(data_matrix, dt)
+            dmd.fit()
+
+            # Store the frequencies obtained from DMD
+            dmd_frequencies_per_device[device] = dmd.frequencies
+
+            # Plot DMD frequencies for each device
+            plt.figure()
+            plt.stem(dmd.frequencies)
+            plt.title(f"DMD Frequencies for {axis} - Device {device}")
+            plt.xlabel("Mode Index")
+            plt.ylabel("Frequency (Hz)")
+            plt.grid()
+            plt.savefig(os.path.join(save_directory, f'dmd_frequencies_{axis}_{device}.png'))
+            plt.show()
+
+            # Print the DMD frequencies for comparison
+            print(f"Device: {device}, Axis: {axis}, DMD Frequencies (Hz): {dmd.frequencies}")
+
+        # Compare frequencies across all devices for the current axis
+        # (You can extend this comparison to your FEM model frequencies)
+
+    print("Frequency extraction and comparison complete.")
+
+
+
 if __name__ == '__main__':
-    device_data, gap_info = get_data_with_gaps()
+    #device_data, gap_info = get_data_with_gaps()
 
     # plot_full_acceleration(device_data)
     # find_common_silent_interval(device_data, axis='acc_x', peak_threshold=0.001, window_minutes=1)
@@ -530,6 +661,11 @@ if __name__ == '__main__':
     # analyze_silent_interval(device_data, axis='acc_x',peak_threshold=0.001, window_minutes=1, save_directory='plots')
     # analyze_silent_interval(device_data, axis='acc_y',peak_threshold=0.001, window_minutes=1, save_directory='plots')
     # analyze_silent_interval(device_data, axis='acc_z',peak_threshold=0.001, window_minutes=1, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_y', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
-    plot_ssta_slta_ratio_all_devices(device_data, axis='acc_z', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    # plot_ssta_slta_ratio_all_devices(device_data, axis='acc_x', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    # plot_ssta_slta_ratio_all_devices(device_data, axis='acc_y', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    # plot_ssta_slta_ratio_all_devices(device_data, axis='acc_z', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
+    # Assuming device_data is already obtained from your `get_data` function or equivalent
+    device_data = get_data()
+
+    # Call the function to extract and compare frequencies
+    extract_and_compare_frequencies(device_data)
