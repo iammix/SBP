@@ -517,6 +517,45 @@ def get_data():
 
     return device_data
 
+def get_data_by_file(data_directory='Data/T7/sbp'):
+    """
+    Reads and organizes acceleration data from each file in the directory.
+
+    Parameters:
+    - data_directory: The root directory containing device folders with files.
+
+    Returns:
+    - file_data: A dictionary where each key is a filename, and the value is its corresponding DataFrame.
+    """
+    file_data = {}
+
+    # Traverse through each device folder
+    for device_folder in os.listdir(data_directory):
+        device_folder_path = os.path.join(data_directory, device_folder)
+
+        if os.path.isdir(device_folder_path):
+            for file_name in os.listdir(device_folder_path):
+                if file_name.endswith('.txt'):
+                    file_path = os.path.join(device_folder_path, file_name)
+                    
+                    # Read the file and parse columns
+                    df = pd.read_csv(file_path, delimiter='\t',
+                                     usecols=['Time', 'Acc x', 'Acc y', 'Acc z'])
+                    df.columns = ['time', 'acc_x', 'acc_y', 'acc_z']  # Rename columns for consistency
+                    
+                    # Convert time column to datetime format
+                    df['time'] = pd.to_datetime(df['time'])
+                    
+                    # Convert acceleration from milli-g to g
+                    df['acc_x'] = df['acc_x'] / 1000
+                    df['acc_y'] = df['acc_y'] / 1000
+                    df['acc_z'] = df['acc_z'] / 1000
+
+                    # Store the DataFrame with the file name as key
+                    file_data[file_name] = df
+
+    return file_data
+
 
 def butterworth_filter(data, lowcut, highcut, fs, order=4):
     """
@@ -553,7 +592,6 @@ def baseline_correction(df, linear=False):
         df['acc_z'] = df['acc_z'] - df['acc_z'].mean()
 
     return df
-
 
 def get_data_with_gaps(threshold_minutes=1):
     device_data = {}
@@ -596,14 +634,226 @@ def get_data_with_gaps(threshold_minutes=1):
 
     return device_data, gap_info
 
+def plot_recursive_sta_lta(device_data, nSTA=125 * 3, nLTA=125 * 30, save_directory='plots'):
+    """
+    Calculates and plots recursive STA/LTA ratio vs. time for each direction (x, y, z) separately,
+    including all devices in each direction.
 
-import numpy as np
-import pandas as pd
-from scipy.signal import periodogram
-import matplotlib.pyplot as plt
+    Parameters:
+    - device_data: Dictionary of DataFrames for each device.
+    - nSTA: Number of samples for the short-term average (STA) window.
+    - nLTA: Number of samples for the long-term average (LTA) window.
+    - save_directory: Directory to save the plots.
+    """
+    os.makedirs(save_directory, exist_ok=True)
 
-# Assuming DynamicModeDecomposition class from previous response is imported
-# This class should be updated to fit data and compute frequencies.
+    for axis in ['acc_x', 'acc_y', 'acc_z']:
+        plt.figure(figsize=(14, 8))
+        plt.title(f'Recursive STA/LTA Ratio vs Time for {axis.upper()} (All Devices)')
+        plt.xlabel('Time')
+        plt.ylabel('rSTA/rLTA Ratio')
+
+        for device, df in device_data.items():
+            # Compute acceleration vector (magnitude)
+            vec2 = df[axis] ** 2
+
+            # Initialize recursive STA (rSTA) and recursive LTA (rLTA)
+            rSTA = np.zeros_like(vec2)
+            rLTA = np.zeros_like(vec2)
+
+            rSTA[0] = vec2.iloc[0]
+            rLTA[0] = vec2.iloc[0]
+
+            # Calculate recursive STA
+            for i in range(1, len(vec2)):
+                if i < nSTA:
+                    rSTA[i] = rSTA[i - 1] + (vec2.iloc[i] - rSTA[i - 1]) / (i + 1)
+                else:
+                    rSTA[i] = rSTA[i - 1] + (vec2.iloc[i] - rSTA[i - 1]) / nSTA
+
+            # Calculate recursive LTA
+            for i in range(1, len(vec2)):
+                if i < nLTA:
+                    rLTA[i] = rLTA[i - 1] + (vec2.iloc[i] - rLTA[i - 1]) / (i + 1)
+                else:
+                    rLTA[i] = rLTA[i - 1] + (vec2.iloc[i] - rLTA[i - 1]) / nLTA
+
+            # Avoid division by zero
+            rLTA[rLTA == 0] = np.nan
+
+            # Compute rSTA/rLTA ratio
+            rsta_rlta_ratio = np.sqrt(rSTA) / np.sqrt(rLTA)
+
+            # Plot rSTA/rLTA ratio for this device
+            plt.plot(df['time'], rsta_rlta_ratio, label=device, linewidth=0.5)
+
+        # Save and show the plot
+        plt.legend()
+        plt.grid(True)
+        save_path = os.path.join(save_directory, f'recursive_sta_lta_ratio_{axis}.png')
+        plt.savefig(save_path)
+        plt.show()
+        print(f"Plot for {axis} saved to {save_path}")
+
+def plot_sta_lta_together(device_data, nSTA=125 * 3, nLTA=125 * 30, save_directory='plots'):
+    """
+    Calculates and plots STA and LTA together for all devices in each direction (x, y, z).
+
+    Parameters:
+    - device_data: Dictionary of DataFrames for each device.
+    - nSTA: Number of samples for the short-term average (STA) window.
+    - nLTA: Number of samples for the long-term average (LTA) window.
+    - save_directory: Directory to save the plots.
+    """
+    os.makedirs(save_directory, exist_ok=True)
+
+    for axis in ['acc_x', 'acc_y', 'acc_z']:
+        plt.figure(figsize=(14, 8))
+        plt.title(f'STA and LTA for {axis.upper()} (All Devices)')
+        plt.xlabel('Time')
+        plt.ylabel('Value')
+
+        for device, df in device_data.items():
+            # Compute acceleration vector (magnitude)
+            vec2 = df[axis] ** 2
+
+            # Initialize STA and LTA arrays
+            sSTA = np.zeros_like(vec2)
+            sLTA = np.zeros_like(vec2)
+
+            # Calculate STA
+            for i in range(1, len(vec2)):
+                if i < nSTA:
+                    sSTA[i] = sSTA[i - 1] + (vec2.iloc[i] - sSTA[i - 1]) / (i + 1)
+                else:
+                    sSTA[i] = sSTA[i - 1] + (vec2.iloc[i] - vec2.iloc[i - nSTA]) / nSTA
+
+            # Calculate LTA
+            for i in range(1, len(vec2)):
+                if i < nLTA:
+                    sLTA[i] = sLTA[i - 1] + (vec2.iloc[i] - sLTA[i - 1]) / (i + 1)
+                else:
+                    sLTA[i] = sLTA[i - 1] + (vec2.iloc[i] - vec2.iloc[i - nLTA]) / nLTA
+
+            # Plot STA and LTA for this device
+            plt.plot(df['time'], np.sqrt(sSTA), label=f'{device} STA', linewidth=0.5, linestyle='--')
+            plt.plot(df['time'], np.sqrt(sLTA), label=f'{device} LTA', linewidth=0.5)
+
+        # Add legend and save the plot
+        plt.legend()
+        plt.grid(True)
+        save_path = os.path.join(save_directory, f'sta_lta_together_{axis}.png')
+        plt.savefig(save_path)
+        plt.show()
+        print(f"Plot for {axis} saved to {save_path}")
+
+
+def plot_recursive_sta_lta_by_file(file_data, nSTA=125 * 3, nLTA=125 * 30, save_directory='plots'):
+    """
+    Computes and plots rSTA/rLTA ratio for each file separately.
+
+    Parameters:
+    - file_data: Dictionary of DataFrames, where each key is a filename and the value is its DataFrame.
+    - nSTA: Number of samples for the short-term average (STA) window.
+    - nLTA: Number of samples for the long-term average (LTA) window.
+    - save_directory: Directory to save the plots.
+    """
+    os.makedirs(save_directory, exist_ok=True)
+
+    for file_name, df in file_data.items():
+        plt.figure(figsize=(14, 8))
+        plt.title(f'Recursive STA/LTA Ratio for {file_name}')
+        plt.xlabel('Time')
+        plt.ylabel('rSTA/rLTA Ratio')
+
+        # Compute acceleration vector for the current axis
+        vec2 = df['acc_x'] ** 2 + df['acc_y'] ** 2 + df['acc_z'] ** 2
+        # Initialize recursive STA (rSTA) and recursive LTA (rLTA)
+        rSTA = np.zeros_like(vec2)
+        rLTA = np.zeros_like(vec2)
+        rSTA[0] = vec2[0]
+        rLTA[0] = vec2[0]
+        # Compute rSTA
+        for i in range(1, len(vec2)):
+            if i < nSTA:
+                rSTA[i] = rSTA[i - 1] + (vec2[i] - rSTA[i - 1]) / (i + 1)
+            else:
+                rSTA[i] = rSTA[i - 1] + (vec2[i] - rSTA[i - 1]) / nSTA
+        # Compute rLTA
+        for i in range(1, len(vec2)):
+            if i < nLTA:
+                rLTA[i] = rLTA[i - 1] + (vec2[i] - rLTA[i - 1]) / (i + 1)
+            else:
+                rLTA[i] = rLTA[i - 1] + (vec2[i] - rLTA[i - 1]) / nLTA
+        # Avoid division by zero
+        rLTA[rLTA == 0] = np.nan
+        # Compute rSTA/rLTA ratio
+        #rsta_rlta_ratio = np.sqrt(rSTA) / np.sqrt(rLTA)
+        # Plot rSTA/rLTA ratio for this axis
+        plt.plot(df['time'], rSTA/rLTA, label='rSTA/rLTA', linewidth=0.5)
+
+        # Save the plot
+        plt.legend()
+        plt.grid(True)
+        save_path = os.path.join(save_directory, f'{file_name}_rSTA_rLTA.png')
+        plt.savefig(save_path)
+        #plt.show()
+        print(f"Plot for {file_name} saved to {save_path}")
+
+def plot_standard_sta_lta_by_file(file_data, nSTA=125 * 3, nLTA=125 * 30, save_directory='plots'):
+    """
+    Computes and plots standard STA (sSTA) and LTA (sLTA) for all devices within each file.
+
+    Parameters:
+    - file_data: Dictionary where each key is a filename and the value is its DataFrame.
+    - devices: List of device names (e.g., ['device1', 'device2', ...]) to extract from each file.
+               Each device corresponds to a set of columns like 'device1_acc_x', 'device1_acc_y', etc.
+    - nSTA: Number of samples for the short-term average (STA) window.
+    - nLTA: Number of samples for the long-term average (LTA) window.
+    - save_directory: Directory to save the plots.
+    """
+    os.makedirs(save_directory, exist_ok=True)
+
+    for file_name, df in file_data.items():
+        plt.figure(figsize=(14, 8))
+        plt.title(f'Recursive STA/LTA Ratio for {file_name}')
+        plt.xlabel('Time')
+        plt.ylabel('rSTA/rLTA Ratio')
+
+        # Compute acceleration vector for the current axis
+        vec2 = df['acc_x'] ** 2 + df['acc_y'] ** 2 + df['acc_z'] ** 2
+        # Initialize recursive STA (rSTA) and recursive LTA (rLTA)
+        sSTA = np.zeros_like(vec2)
+        sLTA = np.zeros_like(vec2)
+        sSTA[0] = vec2[0]
+        sLTA[0] = vec2[0]
+        # Compute rSTA
+        for i in range(1, len(vec2)):
+            if i < nSTA:
+                sSTA[i] = sSTA[i - 1] + (vec2[i] - sSTA[i - 1]) / (i + 1)
+            else:
+                sSTA[i] = sSTA[i - 1] + (vec2[i] - vec2[i - nSTA]) / nSTA
+                # Compute rLTA
+        for i in range(1, len(vec2)):
+            
+            if i < nLTA:
+                sLTA[i] = sLTA[i - 1] + (vec2[i] - sLTA[i - 1]) / (i + 1)
+            else:
+                sLTA[i] = sLTA[i - 1] + (vec2[i] - vec2[i - nLTA]) / nLTA
+        # Compute rSTA/rLTA ratio
+        #rsta_rlta_ratio = np.sqrt(rSTA) / np.sqrt(rLTA)
+        # Plot rSTA/rLTA ratio for this axis
+        plt.plot(df['time'], sSTA/sLTA, label='sSTA/sLTA', linewidth=0.5)
+
+        # Save the plot
+        plt.legend()
+        plt.grid(True)
+        save_path = os.path.join(save_directory, f'{file_name}_sSTA_sLTA.png')
+        plt.savefig(save_path)
+        #plt.show()
+        print(f"Plot for {file_name} saved to {save_path}")
+
+
 
 def extract_and_compare_frequencies(device_data, dt=1/125, save_directory='plots'):
     """
@@ -665,7 +915,7 @@ if __name__ == '__main__':
     # plot_ssta_slta_ratio_all_devices(device_data, axis='acc_y', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
     # plot_ssta_slta_ratio_all_devices(device_data, axis='acc_z', nSTA=125 * 3, nLTA=125 * 30, save_directory='plots')
     # Assuming device_data is already obtained from your `get_data` function or equivalent
-    device_data = get_data()
+    device_data = get_data_by_file()
 
     # Call the function to extract and compare frequencies
-    extract_and_compare_frequencies(device_data)
+    plot_standard_sta_lta_by_file(device_data)
