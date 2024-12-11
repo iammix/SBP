@@ -486,8 +486,8 @@ class SeismoBugP:
             df_accel.to_csv(f'./Records/accel_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
             df.to_csv(f'./Records/stats_{self._alias}_{formatted_datetime}.txt', sep='\t', index=False)
 
-    def _get_stats():
-    pass
+    def _get_stats(self):
+        pass
 
 if __name__ == '__main__':
     node = SeismoBugP()
