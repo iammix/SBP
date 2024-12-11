@@ -470,5 +470,4 @@ def fdd():
 
 
 if __name__ == '__main__':
-    testing()
     fdd()
