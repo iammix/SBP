@@ -1,9 +1,10 @@
 import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.signal import welch, butter, filtfilt, find_peaks
 from scipy.linalg import svd
+from scipy.signal import welch, butter, filtfilt, find_peaks
 
 
 def sbp_parser(data_directory, file_extension=".txt"):
@@ -164,7 +165,7 @@ def plot_singular_values_with_peaks(freqs, singular_values):
     peak_values = []  # To store peak values
 
     for i in range(singular_values.shape[1]):
-        plt.plot(freqs, singular_values[:, i], label=f"SV {i+1}")
+        plt.plot(freqs, singular_values[:, i], label=f"SV {i + 1}")
 
         # Identify peaks for the current singular value series
         peaks, _ = find_peaks(singular_values[:, i])
@@ -248,7 +249,7 @@ def plot_average_normalized_singular_values(freqs, avg_normalized_singular_value
     """
     plt.figure(figsize=(10, 6))
     for i in range(avg_normalized_singular_values.shape[1]):
-        plt.plot(freqs, avg_normalized_singular_values[:, i], label=f"Avg Normalized SV {i+1}")
+        plt.plot(freqs, avg_normalized_singular_values[:, i], label=f"Avg Normalized SV {i + 1}")
 
     plt.xscale('log')  # Logarithmic x-axis
     plt.xlabel("Frequency (Hz, Log Scale)")
@@ -257,6 +258,8 @@ def plot_average_normalized_singular_values(freqs, avg_normalized_singular_value
     plt.legend()
     plt.grid(True, which="both", linestyle='--', linewidth=0.5)
     plt.show()
+
+
 def compute_normalized_singular_values_for_each_device(device_data, sampling_frequency, lowcut, highcut, order):
     """
     Computes normalized singular values for spectral density matrices separately for each device.
@@ -307,7 +310,7 @@ def plot_normalized_singular_values_per_device(results):
     for device, (freqs, normalized_singular_values) in results.items():
         plt.figure(figsize=(10, 6))
         for i in range(normalized_singular_values.shape[1]):
-            plt.plot(freqs, normalized_singular_values[:, i], label=f"Normalized SV {i+1}")
+            plt.plot(freqs, normalized_singular_values[:, i], label=f"Normalized SV {i + 1}")
 
         plt.xscale('log')  # Logarithmic x-axis
         plt.xlabel("Frequency (Hz, Log Scale)")
@@ -319,6 +322,7 @@ def plot_normalized_singular_values_per_device(results):
 
 
 from scipy.linalg import svd, eig
+
 
 def construct_hankel_matrix(data, l):
     """
@@ -335,12 +339,12 @@ def construct_hankel_matrix(data, l):
     n_columns = num_samples - 2 * l + 1
     if n_columns < 1:
         raise ValueError("Not enough data samples for the specified block size.")
-    
+
     # Construct the Hankel matrix
     H = np.zeros((l * num_channels, n_columns))
     for i in range(l):
         H[i * num_channels:(i + 1) * num_channels, :] = data[:, i:i + n_columns]
-    
+
     return H
 
 
@@ -356,6 +360,7 @@ def stochastic_subspace_identification(data, l, model_orders):
     Returns:
     - results: Dictionary containing natural frequencies, damping ratios, and mode shapes for each model order.
     """
+
     H = construct_hankel_matrix(data, l)
     U, S, Vh = svd(H)  # Singular Value Decomposition
 
@@ -435,7 +440,8 @@ def ssi():
         acceleration_data = df[['acc_x', 'acc_y', 'acc_z']].to_numpy().T
 
         # Apply Butterworth bandpass filter
-        filtered_data = apply_bandpass_filter(pd.DataFrame(acceleration_data.T), lowcut, highcut, sampling_frequency, order).to_numpy().T
+        filtered_data = apply_bandpass_filter(pd.DataFrame(acceleration_data.T), lowcut, highcut, sampling_frequency,
+                                              order).to_numpy().T
 
         # Perform SSI
         ssi_results = stochastic_subspace_identification(filtered_data, block_size, model_orders)
@@ -448,18 +454,16 @@ def fdd():
     # Path to the root directory with SBP data
     data_directory = 'Data/T7/sbp/'
     parsed_data = sbp_parser(data_directory)
-    data = pd.read_csv('example_data.txt', delimiter='  ', header=None)
 
     # Bandpass filter parameters
     lowcut = 0.1
     highcut = 20.0
-    sampling_frequency = 125 # Adjust if different
+    sampling_frequency = 125  # Adjust if different
     order = 4
 
     # Compute normalized singular values for each device
-    results = compute_normalized_singular_values_for_each_device(
-        data, sampling_frequency, lowcut, highcut, order
-    )
+    results = compute_normalized_singular_values_for_each_device(parsed_data, sampling_frequency, lowcut, highcut,
+                                                                 order)
 
     # Plot normalized singular values for each device
     plot_normalized_singular_values_per_device(results)
