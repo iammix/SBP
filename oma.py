@@ -425,7 +425,7 @@ def ssi():
     # Bandpass filter parameters
     lowcut = 0.1
     highcut = 20.0
-    sampling_frequency = 125  # Adjust if different
+    sampling_frequency = 125
     order = 4
 
     # Block size and model orders for SSI
@@ -467,6 +467,60 @@ def fdd():
 
     # Plot normalized singular values for each device
     plot_normalized_singular_values_per_device(results)
+
+
+def baseline_correction_hnd(rec_a, rec_t):
+    # linear baseline correction
+    rec_t_sec = np.array([(t - rec_t[0]).total_seconds() for t in rec_t])
+
+    sps = len(rec_t_sec) / (rec_t_sec[-1] - rec_t_sec[0])
+
+    rec_a_cor = np.empty_like(rec_a)
+    for i in range(3):
+        signal = rec_a[:, i]
+        mean_signal = np.mean(signal)
+        mean_time = np.mean(rec_t_sec)
+        numerator = np.sum((rec_t_sec - mean_time) * (signal - mean_signal))
+        denominator = np.sum((rec_t_sec - mean_time) ** 2)
+        slope = numerator / denominator
+        intercept = mean_signal - slope * mean_time
+        baseline = slope * rec_t_sec + intercept
+        rec_a_cor[:, i] = signal - baseline
+
+    return rec_a_cor
+
+def baseline_correction_(df, linear=False):
+    # Ensure the 'time' column exists
+    if 'time' not in df.columns:
+        raise KeyError("'time' column is missing in the DataFrame.")
+
+    # Ensure 'time' is in datetime format
+    if not np.issubdtype(df['time'].dtype, np.datetime64):
+        try:
+            df['time'] = pd.to_datetime(df['time'])
+        except Exception as e:
+            raise ValueError(f"Failed to convert 'time' column to datetime. Error: {e}")
+
+    df_corrected = df.copy()
+
+    if linear:
+        # Apply linear baseline correction
+        for axis in ['acc_x', 'acc_y', 'acc_z']:
+            if axis not in df_corrected.columns:
+                raise KeyError(f"'{axis}' column is missing in the DataFrame.")
+
+            time_numeric = (df_corrected['time'] - df_corrected['time'].iloc[0]).dt.total_seconds()
+            trend = np.polyfit(time_numeric, df_corrected[axis], 1)  # Fit a linear trend
+            linear_baseline = np.polyval(trend, time_numeric)        # Evaluate the trend
+            df_corrected[axis] = df_corrected[axis] - linear_baseline  # Subtract the linear baseline
+    else:
+        # Apply zero baseline correction (subtract mean)
+        for axis in ['acc_x', 'acc_y', 'acc_z']:
+            if axis not in df_corrected.columns:
+                raise KeyError(f"'{axis}' column is missing in the DataFrame.")
+            df_corrected[axis] = df_corrected[axis] - df_corrected[axis].mean()
+
+    return df_corrected
 
 
 if __name__ == '__main__':
