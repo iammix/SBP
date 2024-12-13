@@ -1,7 +1,8 @@
-import numpy as np
 import pandas as pd
 import pytest
 from oma import baseline_correction_, baseline_correction_hnd
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 def load_data(file_path):
@@ -33,5 +34,7 @@ def test_baseline_correction(sample_data):
         assert np.allclose(
             rec_a_cor[:, i],
             df_corrected[axis].values,
-            atol=1e-05
+            atol=1e-12
         ), f"Mismatch in {axis} axis correction"
+
+
