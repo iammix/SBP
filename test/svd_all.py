@@ -2,13 +2,38 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
-from scipy.signal import welch
+from scipy.signal import welch, butter, filtfilt
 import sys
 
-
+sys.path.append(r'A:\Projects\SBP')
 
 from oma import baseline_correction_
 
+def butterworth_bandpass_filter(data, lowcut=0.1, highcut=18.0, fs=100.0, order=4):
+    """
+    Apply a Butterworth bandpass filter to the input data.
+
+    Parameters:
+        data: DataFrame, input signal data with multiple columns (e.g., acc_x, acc_y, acc_z).
+        lowcut: float, low cut-off frequency in Hz (default: 0.1 Hz).
+        highcut: float, high cut-off frequency in Hz (default: 20 Hz).
+        fs: float, sampling frequency in Hz (default: 100 Hz).
+        order: int, order of the filter (default: 4).
+
+    Returns:
+        filtered_data: DataFrame, filtered signal data.
+    """
+    nyquist = 0.5 * fs
+    low = lowcut / nyquist
+    high = highcut / nyquist
+
+    # Create Butterworth filter coefficients
+    b, a = butter(order, [low, high], btype='band')
+
+    # Apply the filter to each column of the data
+    filtered_data = data.apply(lambda col: filtfilt(b, a, col), axis=0)
+    
+    return filtered_data
 
 def load_data(file_path):
     df = pd.read_csv(file_path, sep='\t')
@@ -46,22 +71,54 @@ def compute_psd(data, fs):
 
 
 device1 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_01.txt')
-device1 = baseline_correction_(device1)
 device2 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_02.txt')
-device2 = baseline_correction_(device2)
 device3 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_03.txt')
-device3 = baseline_correction_(device3)
 device4 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_04.txt')
+device6 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_06.txt')
+device7 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_07.txt')
+device8 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_08.txt')
+device9 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_09.txt')
+device10 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_10.txt')
+device11 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_11.txt')
+device12 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_12.txt')
+device14 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_14.txt')
+device15 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_15.txt')
+device16 = load_data(r'A:\Projects\SBP\test\2024_10_23_1305_RISE_16.txt')
+
+device1 = baseline_correction_(device1)
+device2 = baseline_correction_(device2)
+device3 = baseline_correction_(device3)
 device4 = baseline_correction_(device4)
+device6 = baseline_correction_(device6)
+device7 = baseline_correction_(device7)
+device8 = baseline_correction_(device8)
+device9 = baseline_correction_(device9)
+device10 = baseline_correction_(device10)
+device11 = baseline_correction_(device11)
+device12 = baseline_correction_(device12)
+device14 = baseline_correction_(device14)
+device15 = baseline_correction_(device15)
+device16 = baseline_correction_(device16)
 
 # Generate synthetic data for 4 devices
-device_data = [device1, device2, device3, device4]
+device_data = [device1, device2, device3, device4, device6, device7, device8, device9, device10, device11, device12, device14, device15, device16]
 sampling_frequencies = []
+filtered_device_data = []
+
 for device in device_data:
     t = pd.to_datetime(device['time'])
     time_diffs = t.diff().dt.total_seconds()
     avg_sampling_interval = time_diffs.mean()
-    sampling_frequencies.append(1 / avg_sampling_interval)
+    fs = 1/ avg_sampling_interval
+    sampling_frequencies.append(fs)
+
+    # Filter the data
+    numeric_columns = device[['acc_x', 'acc_y', 'acc_z']]
+    filtered_data = butterworth_bandpass_filter(numeric_columns, fs=fs)
+    filtered_device_data.append(filtered_data)
+
+# Replace device_data with the filtered data for further processing
+device_data = filtered_device_data
 
 
 def svd_reconstruct():
@@ -270,7 +327,7 @@ def svd_feature_extract_resample():
     plt.legend()
     plt.show()
 
-    k = 3  # Number of features
+    k = 12 # Number of features
     # Extract Features
     features = U[:, :k]
     feature_importance = Sigma[:k]
@@ -295,20 +352,43 @@ def svd_feature_extract_resample():
     plt.legend()
     plt.show()
 
-    # Compare final PSD vs original PSD for each device
-    for i, (freqs, psd_matrix) in enumerate(psd_results):
-        # Get the PSD for the current device
-        plt.figure(figsize=(12, 6))
-        for channel in range(psd_matrix.shape[1]):
-            plt.plot(freqs, psd_matrix[:, channel], label=f"PSD (Channel {channel + 1})", alpha=0.7)
+    # # Compare final PSD vs original PSD for each device
+    # for i, (freqs, psd_matrix) in enumerate(psd_results):
+    #     # Get the PSD for the current device
+    #     plt.figure(figsize=(12, 6))
+    #     for channel in range(psd_matrix.shape[1]):
+    #         plt.plot(freqs, psd_matrix[:, channel], label=f"PSD (Channel {channel + 1})", alpha=0.7)
 
-        plt.xscale('log')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Power Spectral Density')
-        plt.title(f'Device {i + 1}: PSD')
-        plt.legend()
-        plt.show()
+    #     plt.xscale('log')
+    #     plt.xlabel('Frequency (Hz)')
+    #     plt.ylabel('Power Spectral Density')
+    #     plt.title(f'Device {i + 1}: PSD')
+    #     plt.legend()
+    #     plt.show()
+    # ----- New plotting code: 3 subplots for the 3 channels -----
 
+    # Reconstruct the PSD matrix using top k singular values
+    k = 6  # Retain top 2 singular values
+    Sigma_reduced = np.zeros_like(Sigma)
+    Sigma_reduced[:k] = Sigma[:k]
+    psd_matrix_reconstructed = (U[:, :k] * Sigma_reduced[:k]) @ VT[:k, :]
+
+    fig, axs = plt.subplots(3, 1, figsize=(12, 18))
+
+    # Loop over channels (assuming order: 0=acc_x, 1=acc_y, 2=acc_z)
+    for ch in range(3):
+        for i, (freqs, psd_matrix) in enumerate(psd_results):
+            axs[ch].plot(freqs, psd_matrix_reconstructed[:, ch], label=f"Device {i + 1}", alpha=0.7)
+        axs[ch].set_xscale('log')
+        axs[ch].set_xlabel('Frequency (Hz)')
+        axs[ch].set_ylabel('Power Spectral Density')
+        axs[ch].set_title(f'Channel {ch + 1} PSD across Devices')
+        axs[ch].legend()
+
+    plt.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == '__main__':
+    #svd_reconstruct()
     svd_feature_extract_resample()

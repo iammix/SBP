@@ -489,7 +489,7 @@ def baseline_correction_hnd(rec_a, rec_t):
 
     return rec_a_cor
 
-def baseline_correction_(df, linear=False):
+def baseline_correction_(df, linear=True):
     # Ensure the 'time' column exists
     if 'time' not in df.columns:
         raise KeyError("'time' column is missing in the DataFrame.")
